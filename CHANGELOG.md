@@ -10,6 +10,9 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- cascette-formats: `KeyringConfig` type for parsing, building, and validating
+  keyring config files (`key-{ID} = {VALUE}` format). Supports key lookup by
+  hex string or u64 ID with case-insensitive matching.
 - cascette-client-storage: KMT update section for LSM-tree L0 writes
   - 24-byte `UpdateEntry` with hash guard, status byte, and delete markers
   - 512-byte `UpdatePage` (21 entries max) with 4KB sync every 8th page
