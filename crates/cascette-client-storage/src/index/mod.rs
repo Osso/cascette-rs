@@ -413,9 +413,9 @@ impl IndexManager {
     /// Debug print first few entries (only for bucket 0)
     fn debug_print_entries(entries: &[IndexEntry], id: u8) {
         if !entries.is_empty() && id == 0 {
-            eprintln!("DEBUG: Index {id:02x} first 3 entries (before sort):");
+            tracing::debug!("Index {id:02x} first 3 entries (before sort):");
             for (i, entry) in entries.iter().take(3).enumerate() {
-                eprintln!(
+                tracing::debug!(
                     "  {}: key={}, archive={}, offset={}, size={}",
                     i,
                     hex::encode(entry.key),
