@@ -582,6 +582,11 @@ impl Installation {
         &self.path
     }
 
+    /// Get a reference to the content resolver for direct key resolution.
+    pub fn resolver(&self) -> &ContentResolver {
+        &self.resolver
+    }
+
     /// Check if a content key exists in local indices
     ///
     /// Note: Local .idx files actually use encoding keys, not content keys.
