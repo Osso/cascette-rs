@@ -236,7 +236,10 @@ impl RootBlock {
 fn parse_v1_header<R: Read + Seek>(reader: &mut R) -> Result<RootBlock> {
     let header = RootBlockHeader::read_le(reader)?;
     if header.num_records == 0 || header.num_records > 1_000_000 {
-        return Ok(RootBlock { header, records: Vec::new() });
+        return Ok(RootBlock {
+            header,
+            records: Vec::new(),
+        });
     }
     let count = header.num_records as usize;
     parse_v1_block(reader, header, count)
@@ -253,7 +256,10 @@ fn parse_v2v3_header<R: Read + Seek>(reader: &mut R) -> Result<RootBlock> {
         locale_flags: header_v2.locale_flags,
     };
     if header_v2.num_records == 0 || header_v2.num_records > 1_000_000 {
-        return Ok(RootBlock { header, records: Vec::new() });
+        return Ok(RootBlock {
+            header,
+            records: Vec::new(),
+        });
     }
     let count = header_v2.num_records as usize;
     let content_flags = ContentFlags::new(reconstructed_flags);
@@ -281,7 +287,10 @@ fn parse_v4_header<R: Read + Seek>(reader: &mut R) -> Result<RootBlock> {
         locale_flags,
     };
     if num_records == 0 || num_records > 1_000_000 {
-        return Ok(RootBlock { header, records: Vec::new() });
+        return Ok(RootBlock {
+            header,
+            records: Vec::new(),
+        });
     }
     let count = num_records as usize;
     parse_v2_block(reader, header, count, content_flags)
