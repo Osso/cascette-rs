@@ -54,7 +54,9 @@ winapi = { version = "0.3", features = [
   "handleapi",
   "memoryapi",
   "minwindef",
+  "minwinbase",
   "winnt",
+  "winbase",
   "securitybaseapi",
   "sddl",
 ] }
