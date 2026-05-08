@@ -20,6 +20,7 @@ mod container_table;
 mod error;
 mod est_table;
 mod header;
+mod manifest;
 mod path_table;
 mod utils;
 mod vfs_table;
@@ -33,6 +34,7 @@ pub use header::{
     TVFS_FLAG_ENCODING_SPEC, TVFS_FLAG_INCLUDE_CKEY, TVFS_FLAG_PATCH_SUPPORT,
     TVFS_FLAG_WRITE_SUPPORT, TvfsHeader,
 };
+pub use manifest::{TvfsManifest, TvfsManifestEntry, TvfsManifestHeader};
 pub use path_table::{PathNode, PathTable};
 pub use vfs_table::{VfsEntry, VfsTable};
 
