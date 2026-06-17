@@ -1067,14 +1067,14 @@ mod windows {
 
     use winapi::ctypes::c_void;
     use winapi::shared::minwindef::{DWORD, LPVOID};
-    use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
-    use winapi::um::memoryapi::{
-        CreateFileMappingA, FILE_MAP_ALL_ACCESS, MapViewOfFile, UnmapViewOfFile,
+    use winapi::shared::sddl::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorA, SDDL_REVISION_1,
     };
+    use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+    use winapi::um::memoryapi::{FILE_MAP_ALL_ACCESS, MapViewOfFile, UnmapViewOfFile};
     use winapi::um::minwinbase::SECURITY_ATTRIBUTES;
-    use winapi::um::sddl::ConvertStringSecurityDescriptorToSecurityDescriptorA;
-    use winapi::um::securitybaseapi::LocalFree;
-    use winapi::um::winnt::{HANDLE, PAGE_READWRITE, PSECURITY_DESCRIPTOR, SDDL_REVISION_1};
+    use winapi::um::winbase::{CreateFileMappingA, LocalFree};
+    use winapi::um::winnt::{HANDLE, PAGE_READWRITE, PSECURITY_DESCRIPTOR};
 
     use crate::{Result, StorageError};
 
