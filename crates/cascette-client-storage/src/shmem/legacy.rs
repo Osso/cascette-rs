@@ -1110,7 +1110,8 @@ mod windows {
             let success = unsafe {
                 ConvertStringSecurityDescriptorToSecurityDescriptorA(
                     sddl.as_ptr(),
-                    SDDL_REVISION_1,
+                    // shared::sddl defines SDDL_REVISION_1 as u8; the API takes a DWORD.
+                    DWORD::from(SDDL_REVISION_1),
                     &mut security_descriptor,
                     ptr::null_mut(),
                 )
