@@ -12,6 +12,9 @@
 pub mod update;
 
 #[cfg(test)]
+mod generation_tests;
+
+#[cfg(test)]
 #[allow(unused_imports)]
 use crate::validation::BinaryFormatValidator;
 use crate::{Result, StorageError};
