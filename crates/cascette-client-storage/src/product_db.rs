@@ -135,41 +135,62 @@ pub fn read_installed_product(
     product: &str,
 ) -> Result<InstalledProduct, ProductDbError> {
     let path = install_root.join(".product.db");
+    let database = read_database(&path, product)?;
+    let selected = select_product(database, &path, product)?;
+    read_product_metadata(selected, &path, product)
+}
+
+fn read_database(path: &Path, product: &str) -> Result<Database, ProductDbError> {
     let mut bytes = Vec::new();
-    File::open(&path)
+    File::open(path)
         .and_then(|file| file.take(MAX_DATABASE_BYTES + 1).read_to_end(&mut bytes))
         .map_err(|source| ProductDbError::Io {
-            path: path.clone(),
+            path: path.to_owned(),
             product: product.to_owned(),
             source,
         })?;
     if bytes.len() as u64 > MAX_DATABASE_BYTES {
         return Err(ProductDbError::TooLarge {
-            path,
+            path: path.to_owned(),
             product: product.to_owned(),
         });
     }
-    let database = Database::decode(bytes.as_slice()).map_err(|source| ProductDbError::Decode {
-        path: path.clone(),
+    Database::decode(bytes.as_slice()).map_err(|source| ProductDbError::Decode {
+        path: path.to_owned(),
         product: product.to_owned(),
         source,
-    })?;
+    })
+}
+
+fn select_product(
+    database: Database,
+    path: &Path,
+    product: &str,
+) -> Result<ProductInstall, ProductDbError> {
     let mut matches = database
         .product_install
         .into_iter()
         .filter(|entry| entry.product_code == product);
     let selected = matches.next().ok_or_else(|| ProductDbError::NotFound {
-        path: path.clone(),
+        path: path.to_owned(),
         product: product.to_owned(),
     })?;
     if matches.next().is_some() {
         return Err(ProductDbError::Duplicate {
-            path,
+            path: path.to_owned(),
             product: product.to_owned(),
         });
     }
+    Ok(selected)
+}
+
+fn read_product_metadata(
+    selected: ProductInstall,
+    path: &Path,
+    product: &str,
+) -> Result<InstalledProduct, ProductDbError> {
     let invalid = |field| ProductDbError::InvalidField {
-        path: path.clone(),
+        path: path.to_owned(),
         product: product.to_owned(),
         field,
     };
