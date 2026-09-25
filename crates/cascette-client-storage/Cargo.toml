@@ -16,6 +16,7 @@ rust-version.workspace = true
 thiserror = { workspace = true }
 binrw = { workspace = true }
 hex = { workspace = true }
+prost = { workspace = true }
 md5 = { workspace = true }
 
 # Internal dependencies

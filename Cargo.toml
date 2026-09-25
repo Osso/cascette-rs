@@ -24,6 +24,7 @@ thiserror = "2.0"
 
 # Binary format handling
 binrw = "0.15"
+prost = "0.14"
 
 # Utilities
 hex = "0.4"

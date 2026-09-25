@@ -49,11 +49,27 @@ let storage = Storage::new(config)?;
 let installation = storage.open_installation("wow_retail")?;
 ```
 
+## Installed product metadata
+
+With `local-install`, `read_installed_product(install_root, product)` reads only
+`<install_root>/.product.db` and returns the unique product's version, active
+build key, and optional active install key. The read is limited to 16 MiB.
+It does not use `.build.info`, check `playable`, or prove installation completeness.
+Active-key selection is a library policy, not verified Battle.net behavior.
+The minimal protobuf field definitions follow
+[TACTLib's generated ProtoDatabase.cs](https://github.com/overtools/TACTLib/blob/master/TACTLib/Agent/Protobuf/ProtoDatabase.cs):
+Database.productInstall (1), ProductInstall.productCode (2) and
+cachedProductState (4), CachedProductState.baseProductState (1),
+BaseProductState.currentVersionStr (7), activeBuildKey (14), and
+activeInstallKey (16). Completed (12) and incomplete (18) keys are ignored.
+
 ## Dependencies
 
 - `cascette-formats` - BLTE, encoding, and root file parsers
 - `cascette-crypto` - Content keys, encoding keys, and Jenkins96 hashing
 - `binrw` - Binary format serialization for index entries and IPC messages
+- `prost` 0.14 - Decode the minimal product database protobuf messages; avoids
+  handwritten wire parsing and external `protoc` code generation
 - `memmap2` - Memory-mapped file I/O for archive access
 - `tokio` - Async runtime for installation operations
 - `dashmap` - Concurrent hash maps for caching

@@ -69,6 +69,10 @@ pub mod validation;
 // Build info parser (.build.info BPSV file)
 pub mod build_info;
 
+// Battle.net product database at the installation root.
+#[cfg(feature = "local-install")]
+pub mod product_db;
+
 // Top-level storage manager (manages installations)
 mod storage_manager;
 
@@ -77,6 +81,8 @@ pub use config::StorageConfig;
 pub use container::AccessMode;
 pub use index::IndexEntry;
 pub use installation::Installation;
+#[cfg(feature = "local-install")]
+pub use product_db::{InstalledProduct, ProductDbError, read_installed_product};
 pub use storage_manager::Storage;
 
 /// Result type for storage operations.
