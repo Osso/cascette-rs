@@ -283,34 +283,47 @@ impl IndexManager {
     pub async fn load_all(&mut self) -> Result<()> {
         info!("Loading index files from {}", self.base_path.display());
 
-        // Find all .idx files
+        for (bucket, (version, path)) in self.read_latest_index_paths().await? {
+            debug!(
+                "Loading index file bucket {:02x} version {:06x} from {}",
+                bucket,
+                version,
+                path.display()
+            );
+            self.load_index(bucket, &path)?;
+        }
+
+        info!("Loaded {} index files", self.indices.len());
+        Ok(())
+    }
+
+    /// Select one generation per bucket before loading; directory order is not
+    /// version order, and older journals must not replace newer snapshots.
+    async fn read_latest_index_paths(&self) -> Result<BTreeMap<u8, (u32, PathBuf)>> {
+        let mut latest = BTreeMap::new();
         let mut entries = fs::read_dir(&self.base_path)
             .await
             .map_err(|e| StorageError::Index(format!("Failed to read directory: {e}")))?;
-
         while let Some(entry) = entries
             .next_entry()
             .await
             .map_err(|e| StorageError::Index(format!("Failed to read entry: {e}")))?
         {
             let path = entry.path();
-
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // Parse index file names using official CASC format
-                if let Some((bucket, version)) = Self::parse_index_filename(name) {
-                    debug!(
-                        "Loading index file bucket {:02x} version {:06x} from {}",
-                        bucket,
-                        version,
-                        path.display()
-                    );
-                    self.load_index(bucket, &path)?;
-                }
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Some((bucket, version)) = Self::parse_index_filename(name) else {
+                continue;
+            };
+            if latest
+                .get(&bucket)
+                .is_none_or(|(current, _)| version > *current)
+            {
+                latest.insert(bucket, (version, path));
             }
         }
-
-        info!("Loaded {} index files", self.indices.len());
-        Ok(())
+        Ok(latest)
     }
 
     /// Read and validate the index header, returning a legacy-compatible header
