@@ -52,10 +52,12 @@ let installation = storage.open_installation("wow_retail")?;
 ## Installed product metadata
 
 With `local-install`, `read_installed_product(install_root, product)` reads only
-`<install_root>/.product.db` and returns the unique product's version, active
-build key, and optional active install key. The read is limited to 16 MiB.
-It does not use `.build.info`, check `playable`, or prove installation completeness.
-Active-key selection is a library policy, not verified Battle.net behavior.
+`<install_root>/.product.db` and returns the requested unique product's version,
+`baseProductState.activeBuildKey` (field 14), and optional active install key.
+The read is limited to 16 MiB and does not write installation metadata or use
+`.build.info`. It does not check `playable` or prove local assets are complete;
+subsequent config/archive readers report those failures. Selecting field 14 for
+that exact product is deterministic library policy, not verified Battle.net behavior.
 The minimal protobuf field definitions follow
 [TACTLib's generated ProtoDatabase.cs](https://github.com/overtools/TACTLib/blob/master/TACTLib/Agent/Protobuf/ProtoDatabase.cs):
 Database.productInstall (1), ProductInstall.productCode (2) and
