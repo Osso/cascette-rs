@@ -10,6 +10,8 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 
+use cascette_crypto::TactKey;
+
 use super::{is_valid_md5_hex, parse_line};
 
 /// Keyring Configuration containing encryption key entries
@@ -151,6 +153,34 @@ impl KeyringConfig {
         self.get_key(&hex_id)
     }
 
+    /// Convert all entries to TACT keys for BLTE decryption
+    ///
+    /// A keyring ID is the key name's bytes in BLTE chunk header order
+    /// (little-endian), the same order encoding-file ESpec strings use. So
+    /// `key-4eb4869f95f23b53` is TACT key `533BF2959F86B44E` in the
+    /// wowdev/TACTKeys list, which carries the same key value.
+    pub fn tact_keys(&self) -> Result<Vec<TactKey>, ValidationError> {
+        self.validate()?;
+        self.entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let id =
+                    decode_hex::<8>(&entry.key_id).ok_or_else(|| ValidationError::IdFormat {
+                        index,
+                        value: entry.key_id.clone(),
+                    })?;
+                let key = decode_hex::<16>(&entry.key_value).ok_or_else(|| {
+                    ValidationError::KeyValue {
+                        index,
+                        key_id: entry.key_id.clone(),
+                    }
+                })?;
+                Ok(TactKey::new(u64::from_le_bytes(id), key))
+            })
+            .collect()
+    }
+
     /// Add a key entry
     ///
     /// Both key_id and key_value are normalized to lowercase.
@@ -182,6 +212,10 @@ pub enum ValidationError {
     KeyValue { index: usize, key_id: String },
 }
 
+fn decode_hex<const N: usize>(value: &str) -> Option<[u8; N]> {
+    hex::decode(value).ok()?.try_into().ok()
+}
+
 impl crate::CascFormat for KeyringConfig {
     fn parse(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         Self::parse(data)
@@ -196,6 +230,35 @@ impl crate::CascFormat for KeyringConfig {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tact_keys_use_blte_byte_order_for_key_ids() {
+        let fixture = include_str!("../../test_fixtures/config/wow_keyring_config.txt");
+        let config = KeyringConfig::parse(fixture.as_bytes()).unwrap();
+
+        let keys = config.tact_keys().unwrap();
+
+        assert_eq!(
+            keys,
+            vec![TactKey::new(
+                0x533B_F295_9F86_B44E,
+                [
+                    0xC9, 0x31, 0x67, 0x39, 0x34, 0x8D, 0xCC, 0x03, 0x3A, 0xA8, 0x11, 0x2F, 0x9A,
+                    0x3A, 0xCF, 0x5D,
+                ],
+            )]
+        );
+    }
+
+    #[test]
+    fn tact_keys_reject_invalid_key_value() {
+        let config = KeyringConfig::parse(&b"key-4eb4869f95f23b53 = c931\n"[..]).unwrap();
+
+        assert!(matches!(
+            config.tact_keys(),
+            Err(ValidationError::KeyValue { index: 0, .. })
+        ));
+    }
 
     #[test]
     fn test_parse_single_entry() {
