@@ -19,6 +19,7 @@
 //! - `Armadillo!STRING:0` -- Armadillo key (DRM)
 //! - `Last Activated!STRING:0` -- timestamp
 //! - `Version!STRING:0` -- build version string
+//! - `KeyRing!HEX:16` -- keyring config hash (empty when the product has none)
 //! - `Product!STRING:0` -- product code (e.g., "wow", "wow_classic")
 
 use std::path::Path;
@@ -180,6 +181,15 @@ impl BuildInfoEntry<'_> {
         self.row.get_raw_by_name("Version", self.schema)
     }
 
+    /// Get the keyring config hash, or `None` when the column is absent or empty.
+    ///
+    /// The keyring config lives at `Data/config/{h[0..2]}/{h[2..4]}/{h}`.
+    pub fn keyring(&self) -> Option<&str> {
+        self.row
+            .get_raw_by_name("KeyRing", self.schema)
+            .filter(|hash| !hash.is_empty())
+    }
+
     /// Get the product code (e.g., "wow", "wow_classic").
     pub fn product(&self) -> Option<&str> {
         self.row.get_raw_by_name("Product", self.schema)
@@ -200,6 +210,29 @@ mod tests {
 Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|CDN Key!HEX:16|Install Key!HEX:16|IM Size!DEC:4|CDN Path!STRING:0|CDN Hosts!STRING:0|CDN Servers!STRING:0|Tags!STRING:0|Armadillo!STRING:0|Last Activated!STRING:0|Version!STRING:0|Product!STRING:0
 us|1|abcdef1234567890abcdef1234567890|fedcba0987654321fedcba0987654321|11111111111111111111111111111111|12345|tpr/wow|blzddist1-a.akamaihd.net level3.blizzard.com|http://us.patch.battle.net:1119/tpr/wow http://blzddist1-a.akamaihd.net/tpr/wow|Windows x86_64||2024-01-01T00:00:00Z|11.0.7.12345|wow
 eu|0|abcdef1234567890abcdef1234567890|fedcba0987654321fedcba0987654321|11111111111111111111111111111111|12345|tpr/wow|blzddist1-a.akamaihd.net|http://eu.patch.battle.net:1119/tpr/wow|Windows x86_64|||11.0.7.12345|wow";
+
+    #[test]
+    fn keyring_is_per_product_and_empty_means_none() {
+        let content = "\
+Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|Version!STRING:0|KeyRing!HEX:16|Product!STRING:0
+us|1|dcfc90fffd79ba00406ae46f5f657592|12.1.0.69933|3ca57fe7319a297346440e4d2a03a0cd|wow
+us|1|7dba9c25479632aebc53be9d187818e3|5.5.4.70032||wow_classic
+";
+        let info = BuildInfoFile::parse_str(content).expect("parse");
+        let entries = info.entries();
+        let keyrings: Vec<_> = entries
+            .iter()
+            .map(|entry| (entry.product(), entry.keyring()))
+            .collect();
+
+        assert_eq!(
+            keyrings,
+            vec![
+                (Some("wow"), Some("3ca57fe7319a297346440e4d2a03a0cd")),
+                (Some("wow_classic"), None),
+            ]
+        );
+    }
 
     #[test]
     fn test_parse_build_info() {
