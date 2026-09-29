@@ -10,6 +10,10 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- cascette-formats: `BlteFile::decompress_zeroing_missing_keys` zero-fills
+  encrypted chunks whose TACT key is unknown at their declared decompressed
+  size and reports them as `MissingKeyChunk` (CascLib `CASC_OVERCOME_ENCRYPTED`
+  behavior). Chunk MD5s are verified first so corruption still fails.
 - cascette-formats: `KeyringConfig` type for parsing, building, and validating
   keyring config files (`key-{ID} = {VALUE}` format). Supports key lookup by
   hex string or u64 ID with case-insensitive matching.

@@ -147,16 +147,51 @@ impl BlteFile {
         let mut result = Vec::with_capacity(total_size);
 
         for (index, chunk) in self.chunks.iter().enumerate() {
-            let decompressed = if chunk.mode == CompressionMode::Encrypted {
-                // Decrypt encrypted chunks
-                decrypt_chunk_with_keys(&chunk.data, key_store, index)?
-            } else {
-                // Regular decompression for non-encrypted chunks
-                chunk.decompress(index)?
-            };
-            result.extend_from_slice(&decompressed);
+            result.extend_from_slice(&decode_chunk_with_keys(chunk, key_store, index)?);
         }
         Ok(result)
+    }
+
+    /// Decode all chunks, zero-filling encrypted chunks whose key is unknown
+    ///
+    /// Mirrors CascLib's `CASC_OVERCOME_ENCRYPTED` open flag: a chunk whose
+    /// decryption key is missing becomes zeros of its declared decompressed
+    /// size, and every such chunk is reported in [`PartialDecode::missing_keys`].
+    /// Each chunk's MD5 is checked against the chunk table first, so corrupt
+    /// data still fails with [`BlteError::ChecksumMismatch`] instead of being
+    /// masked as a missing key. Single-chunk files have no declared size to
+    /// zero-fill and still fail with [`BlteError::KeyNotFound`].
+    pub fn decompress_zeroing_missing_keys(
+        &self,
+        key_store: &TactKeyStore,
+    ) -> BlteResult<PartialDecode> {
+        let Some(extended) = &self.header.extended else {
+            return Ok(PartialDecode {
+                data: self.decompress_with_keys(key_store)?,
+                missing_keys: Vec::new(),
+            });
+        };
+
+        let mut data = Vec::with_capacity(self.estimate_decompressed_size());
+        let mut missing_keys = Vec::new();
+        for (index, (chunk, info)) in self.chunks.iter().zip(&extended.chunk_infos).enumerate() {
+            verify_chunk_checksum(chunk, info, index)?;
+            match decode_chunk_with_keys(chunk, key_store, index) {
+                Ok(decoded) => data.extend_from_slice(&decoded),
+                Err(BlteError::KeyNotFound(key_name)) => {
+                    let size = info.decompressed_size as usize;
+                    missing_keys.push(MissingKeyChunk {
+                        chunk_index: index,
+                        key_name,
+                        offset: data.len(),
+                        size,
+                    });
+                    data.resize(data.len() + size, 0);
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(PartialDecode { data, missing_keys })
     }
 
     /// Estimate total decompressed size from header or chunk metadata
@@ -198,6 +233,51 @@ impl BlteFile {
     }
 }
 
+/// Decoded BLTE content where some encrypted chunks had no known key
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartialDecode {
+    /// Decoded content; chunks listed in `missing_keys` are zero-filled
+    pub data: Vec<u8>,
+    /// Zero-filled chunks, in file order
+    pub missing_keys: Vec<MissingKeyChunk>,
+}
+
+/// An encrypted chunk left zero-filled because its key is not in the key store
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MissingKeyChunk {
+    /// Chunk index within the BLTE file
+    pub chunk_index: usize,
+    /// TACT key name as stored in the chunk header
+    pub key_name: u64,
+    /// Offset of the zero-filled range in the decoded content
+    pub offset: usize,
+    /// Declared decompressed size of the chunk (length of the zero-filled range)
+    pub size: usize,
+}
+
+fn decode_chunk_with_keys(
+    chunk: &ChunkData,
+    key_store: &TactKeyStore,
+    index: usize,
+) -> BlteResult<Vec<u8>> {
+    if chunk.mode == CompressionMode::Encrypted {
+        decrypt_chunk_with_keys(&chunk.data, key_store, index)
+    } else {
+        chunk.decompress(index)
+    }
+}
+
+fn verify_chunk_checksum(chunk: &ChunkData, info: &ChunkInfo, index: usize) -> BlteResult<()> {
+    if chunk.verify_checksum(&info.checksum) {
+        return Ok(());
+    }
+    let actual = cascette_crypto::md5::ContentKey::from_data(&chunk.compressed_data());
+    Err(BlteError::ChecksumMismatch {
+        expected: format!("chunk {index} {}", hex::encode(info.checksum)),
+        actual: hex::encode(actual.as_bytes()),
+    })
+}
+
 impl crate::CascFormat for BlteFile {
     fn parse(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         use std::io::Cursor;
@@ -235,6 +315,142 @@ mod tests {
         let built = blte.build().expect("Build should succeed");
         let parsed = BlteFile::parse(&built).expect("Parse should succeed");
         assert_eq!(parsed.decompress().expect("Operation should succeed"), data);
+    }
+
+    mod missing_key_tests {
+        use super::*;
+        use cascette_crypto::TactKey;
+
+        const KNOWN_KEY_NAME: u64 = 0x533B_F295_9F86_B44E;
+        const KNOWN_KEY: [u8; 16] = [
+            0xC9, 0x31, 0x67, 0x39, 0x34, 0x8D, 0xCC, 0x03, 0x3A, 0xA8, 0x11, 0x2F, 0x9A, 0x3A,
+            0xCF, 0x5D,
+        ];
+        const UNKNOWN_KEY_NAME: u64 = 0x583C_5B29_BF20_8655;
+        const IV: [u8; 4] = [0x2A, 0x6E, 0x71, 0x03];
+
+        fn encrypted_chunk(plain: &[u8], key_name: u64, key: &[u8; 16], index: usize) -> ChunkData {
+            let mut inner = vec![CompressionMode::None.as_byte()];
+            inner.extend_from_slice(plain);
+            let spec = EncryptionSpec::salsa20(key_name, IV);
+            let payload = encrypt_chunk_with_key(&inner, spec, key, index).expect("encrypt chunk");
+            ChunkData::from_compressed(CompressionMode::Encrypted, payload, Some(plain.len()))
+        }
+
+        /// Serialized BLTE: plain, known-key, unknown-key, zlib chunks
+        fn mixed_blte_bytes() -> Vec<u8> {
+            let chunks = vec![
+                ChunkData::new(b"WDC5 header".to_vec(), CompressionMode::None).expect("chunk"),
+                encrypted_chunk(b"known section", KNOWN_KEY_NAME, &KNOWN_KEY, 1),
+                encrypted_chunk(&[0xEE; 300], UNKNOWN_KEY_NAME, &[0x5A; 16], 2),
+                ChunkData::new(b"trailer".to_vec(), CompressionMode::ZLib).expect("chunk"),
+            ];
+            BlteFile::multi_chunk(chunks)
+                .expect("multi chunk")
+                .build()
+                .expect("build")
+        }
+
+        fn known_keys() -> TactKeyStore {
+            let mut keys = TactKeyStore::empty();
+            keys.add(TactKey::new(KNOWN_KEY_NAME, KNOWN_KEY));
+            keys
+        }
+
+        #[test]
+        fn unknown_key_chunk_is_zero_filled_at_declared_size_and_reported() {
+            let blte = BlteFile::parse(&mixed_blte_bytes()).expect("parse");
+
+            let decoded = blte
+                .decompress_zeroing_missing_keys(&known_keys())
+                .expect("decode");
+
+            let mut expected = b"WDC5 header".to_vec();
+            expected.extend_from_slice(b"known section");
+            expected.extend_from_slice(&[0; 300]);
+            expected.extend_from_slice(b"trailer");
+            assert_eq!(decoded.data, expected);
+            assert_eq!(
+                decoded.missing_keys,
+                vec![MissingKeyChunk {
+                    chunk_index: 2,
+                    key_name: UNKNOWN_KEY_NAME,
+                    offset: 24,
+                    size: 300,
+                }]
+            );
+        }
+
+        #[test]
+        fn strict_decode_still_fails_on_unknown_key() {
+            let blte = BlteFile::parse(&mixed_blte_bytes()).expect("parse");
+
+            let result = blte.decompress_with_keys(&known_keys());
+
+            assert!(matches!(
+                result,
+                Err(BlteError::KeyNotFound(UNKNOWN_KEY_NAME))
+            ));
+        }
+
+        #[test]
+        fn corrupt_unknown_key_chunk_fails_checksum_instead_of_zero_filling() {
+            let mut bytes = mixed_blte_bytes();
+            let header = BlteFile::parse(&bytes).expect("parse").header;
+            let infos = &header.extended.as_ref().expect("multi chunk").chunk_infos;
+            let chunk2_start = header.data_offset()
+                + infos[..2]
+                    .iter()
+                    .map(|i| i.compressed_size as usize)
+                    .sum::<usize>();
+            bytes[chunk2_start + 100] ^= 0xFF; // inside the unknown-key chunk ciphertext
+            let blte = BlteFile::parse(&bytes).expect("parse");
+
+            let result = blte.decompress_zeroing_missing_keys(&known_keys());
+
+            assert!(
+                matches!(result, Err(BlteError::ChecksumMismatch { .. })),
+                "{result:?}"
+            );
+        }
+
+        #[test]
+        fn malformed_encrypted_header_with_valid_checksum_still_errors() {
+            let bad = ChunkData::from_compressed(
+                CompressionMode::Encrypted,
+                // key name size 4 instead of 8
+                vec![4, 1, 2, 3, 4, 5, 6, 7, 8, 4, 1, 2, 3, 4, 0x53, 0, 0, 0],
+                Some(3),
+            );
+            let plain = ChunkData::new(b"ok".to_vec(), CompressionMode::None).expect("chunk");
+            let bytes = BlteFile::multi_chunk(vec![plain, bad])
+                .expect("multi chunk")
+                .build()
+                .expect("build");
+            let blte = BlteFile::parse(&bytes).expect("parse");
+
+            let result = blte.decompress_zeroing_missing_keys(&known_keys());
+
+            assert!(
+                matches!(&result, Err(BlteError::CompressionError(msg)) if msg.contains("key name size")),
+                "{result:?}"
+            );
+        }
+
+        #[test]
+        fn single_chunk_unknown_key_has_no_declared_size_and_errors() {
+            let chunk = encrypted_chunk(b"secret", UNKNOWN_KEY_NAME, &[0x5A; 16], 0);
+            let mut bytes = b"BLTE\0\0\0\0".to_vec();
+            bytes.extend_from_slice(&chunk.compressed_data());
+            let blte = BlteFile::parse(&bytes).expect("parse");
+
+            let result = blte.decompress_zeroing_missing_keys(&known_keys());
+
+            assert!(matches!(
+                result,
+                Err(BlteError::KeyNotFound(UNKNOWN_KEY_NAME))
+            ));
+        }
     }
 
     #[cfg(test)]
