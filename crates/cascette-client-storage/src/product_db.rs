@@ -122,6 +122,9 @@ pub enum ProductDbError {
 
 /// Read only `<install_root>/.product.db` and select exactly one matching product.
 ///
+/// Accepts a database wrapper or a standalone product record when wrapper decoding
+/// fails. Successfully decoded wrappers are not retried after selection errors.
+///
 /// Selection uses `activeBuildKey` rather than completed or incomplete build keys.
 /// `playable` is not checked: local metadata remains readable when it is false.
 /// This does not check whether CASC content is complete or executable.
@@ -155,11 +158,23 @@ fn read_database(path: &Path, product: &str) -> Result<Database, ProductDbError>
             product: product.to_owned(),
         });
     }
-    Database::decode(bytes.as_slice()).map_err(|source| ProductDbError::Decode {
-        path: path.to_owned(),
-        product: product.to_owned(),
-        source,
-    })
+    Database::decode(bytes.as_slice())
+        .or_else(|source| {
+            // TACTLib's AgentDatabase also accepts installation-local ProductInstall
+            // records. Require a product code so malformed wrappers cannot fall
+            // through as empty records after unknown fields have been skipped.
+            match ProductInstall::decode(bytes.as_slice()) {
+                Ok(product_install) if !product_install.product_code.is_empty() => Ok(Database {
+                    product_install: vec![product_install],
+                }),
+                _ => Err(source),
+            }
+        })
+        .map_err(|source| ProductDbError::Decode {
+            path: path.to_owned(),
+            product: product.to_owned(),
+            source,
+        })
 }
 
 fn select_product(
