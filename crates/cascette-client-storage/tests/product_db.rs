@@ -91,6 +91,15 @@ fn bare_product_install_selects_forever() {
 }
 
 #[test]
+fn bare_product_without_uid_is_selected_after_empty_wrapper_decode() {
+    let dir = tempdir().unwrap();
+    let bare = bare_forever_product();
+    write_db(dir.path(), &bare[string(1, "wowf").len()..]);
+    let selected = read_installed_product(dir.path(), "wowf").unwrap();
+    assert_eq!(selected.version, "1.60.1.70755");
+}
+
+#[test]
 fn missing_product_lists_available_products() {
     let dir = tempdir().unwrap();
     write_db(dir.path(), &bare_forever_product());
@@ -132,6 +141,7 @@ fn rejects_missing_and_duplicate_products() {
     let err = read_installed_product(dir.path(), "wow_forever").unwrap_err();
     assert!(matches!(err, ProductDbError::NotFound { .. }));
     assert!(err.to_string().contains("wow_forever"));
+    assert!(err.to_string().contains("found: wow"));
     let mut db = product("wow", "1", RETAIL_KEY, "");
     db.extend(product("wow", "2", FOREVER_KEY, ""));
     write_db(dir.path(), &db);

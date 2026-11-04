@@ -54,6 +54,10 @@ let installation = storage.open_installation("wow_retail")?;
 With `local-install`, `read_installed_product(install_root, product)` reads only
 `<install_root>/.product.db` and returns the requested unique product's version,
 `baseProductState.activeBuildKey` (field 14), and optional active install key.
+Both wrapped `Database` and bare `ProductInstall` files are accepted. Missing-product
+errors list the product codes present, so a client/product mismatch is visible.
+`decode_agent_product_db` separately reads the machine-wide Agent database's
+product code, family, installation location and client folder without filesystem access.
 The read is limited to 16 MiB and does not write installation metadata or use
 `.build.info`. It does not check `playable` or prove local assets are complete;
 subsequent config/archive readers report those failures. Selecting field 14 for

@@ -137,12 +137,14 @@ pub enum ProductDbError {
         source: prost::DecodeError,
     },
     /// No record matched the requested product.
-    #[error("product {product} not found in {}", path.display())]
+    #[error("product {product} not found in {} (found: {found})", path.display())]
     NotFound {
         /// Database path.
         path: PathBuf,
         /// Requested product.
         product: String,
+        /// Comma-separated product codes present in the database.
+        found: String,
     },
     /// Multiple records matched the requested product.
     #[error("duplicate product {product} in {}", path.display())]
@@ -223,6 +225,12 @@ fn select_product(
     path: &Path,
     product: &str,
 ) -> Result<ProductInstall, ProductDbError> {
+    let found = database
+        .product_install
+        .iter()
+        .map(|entry| entry.product_code.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     let mut matches = database
         .product_install
         .into_iter()
@@ -230,6 +238,7 @@ fn select_product(
     let selected = matches.next().ok_or_else(|| ProductDbError::NotFound {
         path: path.to_owned(),
         product: product.to_owned(),
+        found,
     })?;
     if matches.next().is_some() {
         return Err(ProductDbError::Duplicate {
