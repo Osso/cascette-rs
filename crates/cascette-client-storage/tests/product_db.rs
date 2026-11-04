@@ -68,17 +68,35 @@ fn selects_active_forever_without_build_info_product_row_or_playability() {
     assert_eq!(selected.install_key, RETAIL_KEY);
 }
 
+fn bare_forever_product() -> Vec<u8> {
+    let mut settings = string(1, "R:/Games/World of Warcraft");
+    settings.extend(string(13, "_forever_"));
+    let mut base = string(7, "1.60.1.70755");
+    base.extend(string(14, FOREVER_KEY));
+    let mut bare = string(1, "wowf");
+    bare.extend(string(2, "wowf"));
+    bare.extend(field(3, &settings));
+    bare.extend(field(4, &field(1, &base)));
+    bare.extend(string(6, "wow"));
+    bare
+}
+
 #[test]
-fn bare_product_install_selects_retail() {
+fn bare_product_install_selects_forever() {
     let dir = tempdir().unwrap();
-    let wrapped = product("wow", "12.0.5.1", RETAIL_KEY, "");
-    let header = 1 + varint(wrapped.len() - 2).len();
-    let mut bare = string(1, "wow");
-    bare.extend_from_slice(&wrapped[header..]);
-    write_db(dir.path(), &bare);
-    let selected = read_installed_product(dir.path(), "wow").unwrap();
-    assert_eq!(selected.version, "12.0.5.1");
-    assert_eq!(selected.build_key, RETAIL_KEY);
+    write_db(dir.path(), &bare_forever_product());
+    let selected = read_installed_product(dir.path(), "wowf").unwrap();
+    assert_eq!(selected.version, "1.60.1.70755");
+    assert_eq!(selected.build_key, FOREVER_KEY);
+}
+
+#[test]
+fn missing_product_lists_available_products() {
+    let dir = tempdir().unwrap();
+    write_db(dir.path(), &bare_forever_product());
+    let error = read_installed_product(dir.path(), "wow").unwrap_err();
+    assert!(matches!(error, ProductDbError::NotFound { .. }));
+    assert!(error.to_string().contains("found: wowf"), "{error}");
 }
 
 #[test]
