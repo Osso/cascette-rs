@@ -155,11 +155,23 @@ fn read_database(path: &Path, product: &str) -> Result<Database, ProductDbError>
             product: product.to_owned(),
         });
     }
-    Database::decode(bytes.as_slice()).map_err(|source| ProductDbError::Decode {
-        path: path.to_owned(),
-        product: product.to_owned(),
-        source,
-    })
+    match Database::decode(bytes.as_slice()) {
+        Ok(database) if !database.product_install.is_empty() => Ok(database),
+        Ok(database) => Ok(ProductInstall::decode(bytes.as_slice())
+            .map(|install| Database {
+                product_install: vec![install],
+            })
+            .unwrap_or(database)),
+        Err(source) => ProductInstall::decode(bytes.as_slice())
+            .map(|install| Database {
+                product_install: vec![install],
+            })
+            .map_err(|_| ProductDbError::Decode {
+                path: path.to_owned(),
+                product: product.to_owned(),
+                source,
+            }),
+    }
 }
 
 fn select_product(
