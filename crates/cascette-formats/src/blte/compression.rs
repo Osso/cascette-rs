@@ -1,6 +1,7 @@
 //! BLTE compression and decompression
 
 use super::chunk::CompressionMode;
+use super::encryption::EncryptionType;
 use super::error::{BlteError, BlteResult};
 use cascette_crypto::TactKeyStore;
 use cascette_crypto::salsa20::{decrypt_salsa20, encrypt_salsa20};
@@ -452,13 +453,10 @@ mod tests {
 
         // Should fail to decrypt due to missing key
         let result = decrypt_chunk_with_keys(&encrypted, &key_store, 0);
-        assert!(result.is_err());
-        assert!(
-            result
-                .expect_err("Test operation should fail")
-                .to_string()
-                .contains("Encryption key not found")
-        );
+        assert!(matches!(
+            result,
+            Err(BlteError::KeyNotFound(0xFEDC_BA09_8765_4321))
+        ));
     }
 
     #[test]
@@ -698,11 +696,6 @@ pub fn decrypt_chunk_with_keys(
     );
     offset += 8;
 
-    // Look up key
-    let key = key_store.get(key_name).ok_or_else(|| {
-        BlteError::CompressionError(format!("Encryption key not found: 0x{key_name:016X}"))
-    })?;
-
     if data.len() < offset + 1 {
         return Err(BlteError::CompressionError(
             "Encrypted chunk too short for IV size".to_string(),
@@ -741,29 +734,36 @@ pub fn decrypt_chunk_with_keys(
     let encryption_type = data[offset];
     offset += 1;
 
+    let Some(cipher) = EncryptionType::from_byte(encryption_type) else {
+        return Err(BlteError::CompressionError(format!(
+            "Unknown encryption type: 0x{encryption_type:02X}"
+        )));
+    };
+
+    // Look up key only after the header is fully validated, so a missing key
+    // is never reported for a malformed chunk
+    let key = key_store
+        .get(key_name)
+        .ok_or(BlteError::KeyNotFound(key_name))?;
+
     // Get encrypted data
     let encrypted_data = &data[offset..];
 
     // Decrypt based on encryption type
-    let decrypted_data = match encryption_type {
-        0x53 => {
+    let decrypted_data = match cipher {
+        EncryptionType::Salsa20 => {
             // Salsa20 decryption
             decrypt_salsa20(encrypted_data, key, &iv, block_index).map_err(|e| {
                 BlteError::CompressionError(format!("Salsa20 decryption failed: {e}"))
             })?
         }
-        0x41 => {
+        EncryptionType::Arc4 => {
             // ARC4 decryption
-            let mut cipher = cascette_crypto::Arc4Cipher::new(key.as_slice()).map_err(|e| {
+            let mut arc4 = cascette_crypto::Arc4Cipher::new(key.as_slice()).map_err(|e| {
                 BlteError::CompressionError(format!("ARC4 initialization failed: {e}"))
             })?;
 
-            cipher.decrypt(encrypted_data)
-        }
-        _ => {
-            return Err(BlteError::CompressionError(format!(
-                "Unknown encryption type: 0x{encryption_type:02X}"
-            )));
+            arc4.decrypt(encrypted_data)
         }
     };
 
