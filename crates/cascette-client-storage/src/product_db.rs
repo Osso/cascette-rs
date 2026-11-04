@@ -30,6 +30,50 @@ struct ProductInstall {
     cached_product_state: Option<CachedProductState>,
 }
 
+/// Battle.net Agent's machine-wide product database.
+#[derive(Message)]
+pub struct AgentProductDb {
+    /// Registered products, including non-WoW games.
+    #[prost(message, repeated, tag = "1")]
+    pub products: Vec<AgentProduct>,
+}
+
+/// Installation registration in the Agent database.
+#[derive(Message)]
+pub struct AgentProduct {
+    /// Agent installation identifier.
+    #[prost(string, tag = "1")]
+    pub uid: String,
+    /// Battle.net product code.
+    #[prost(string, tag = "2")]
+    pub product_code: String,
+    /// Client installation settings.
+    #[prost(message, optional, tag = "3")]
+    pub settings: Option<AgentProductSettings>,
+    /// Game family, for example `wow`.
+    #[prost(string, tag = "6")]
+    pub family: String,
+}
+
+/// Filesystem location recorded by the Agent.
+#[derive(Message)]
+pub struct AgentProductSettings {
+    /// Installation root.
+    #[prost(string, tag = "1")]
+    pub install_location: String,
+    /// Client flavor directory within the root.
+    #[prost(string, tag = "13")]
+    pub folder_name: String,
+}
+
+/// Decode the Agent database without inspecting the filesystem.
+///
+/// # Errors
+/// Returns the protobuf error if the database is malformed.
+pub fn decode_agent_product_db(bytes: &[u8]) -> Result<AgentProductDb, prost::DecodeError> {
+    AgentProductDb::decode(bytes)
+}
+
 #[derive(Message)]
 struct CachedProductState {
     #[prost(message, optional, tag = "1")]

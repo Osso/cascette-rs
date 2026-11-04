@@ -82,7 +82,10 @@ pub use container::AccessMode;
 pub use index::IndexEntry;
 pub use installation::Installation;
 #[cfg(feature = "local-install")]
-pub use product_db::{InstalledProduct, ProductDbError, read_installed_product};
+pub use product_db::{
+    AgentProduct, AgentProductDb, AgentProductSettings, InstalledProduct, ProductDbError,
+    decode_agent_product_db, read_installed_product,
+};
 pub use storage_manager::Storage;
 
 /// Result type for storage operations.
