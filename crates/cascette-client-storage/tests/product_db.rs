@@ -69,6 +69,19 @@ fn selects_active_forever_without_build_info_product_row_or_playability() {
 }
 
 #[test]
+fn bare_product_install_selects_retail() {
+    let dir = tempdir().unwrap();
+    let wrapped = product("wow", "12.0.5.1", RETAIL_KEY, "");
+    let header = 1 + varint(wrapped.len() - 2).len();
+    let mut bare = string(1, "wow");
+    bare.extend_from_slice(&wrapped[header..]);
+    write_db(dir.path(), &bare);
+    let selected = read_installed_product(dir.path(), "wow").unwrap();
+    assert_eq!(selected.version, "12.0.5.1");
+    assert_eq!(selected.build_key, RETAIL_KEY);
+}
+
+#[test]
 fn retail_profile_selects_its_own_product() {
     let dir = tempdir().unwrap();
     let mut db = product("wow_forever", "1.60.1.69977", FOREVER_KEY, "");
